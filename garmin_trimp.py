@@ -32,13 +32,21 @@ def get_garmin_data():
     # Extract TRIMP values and dates
     data = []
     for activity in activities:
-        # Get detailed activity data
-        activity_id = activity['activityId']
         try:
-            activity_details = client.get_activity_details(activity_id)
+            activity_id = activity['activityId']
+            activity_details = client.get_activity(activity_id)
+            
+            trimp = 0
+            if 'connectIQMeasurements' in activity_details:
+                for item in activity_details['connectIQMeasurements']:
+                    if item['developerFieldNumber'] == 4:
+                        trimp = round(float(item['value']), 1)
+                
+                # Double TRIMP for strength training
+                if activity_details.get('activityTypeDTO', {}).get('typeKey') == 'strength_training':
+                    trimp = trimp * 2
             
             date = datetime.strptime(activity['startTimeLocal'], "%Y-%m-%d %H:%M:%S")
-            trimp = activity_details.get('summaryDTO', {}).get('trainingIntensityPoints', 0)
             
             data.append({
                 'date': date,
@@ -48,11 +56,19 @@ def get_garmin_data():
             })
             
             print(f"\nProcessing activity: {activity.get('activityName', 'Unknown')}")
+            print(f"Activity ID: {activity_id}")
+            print(f"Activity type: {activity.get('activityType', {}).get('typeKey', 'Unknown')}")
             print(f"TRIMP value: {trimp}")
+            if 'connectIQMeasurements' in activity_details:
+                print("ConnectIQ measurements found:", activity_details['connectIQMeasurements'])
             
         except Exception as e:
-            print(f"Error getting details for activity {activity_id}: {str(e)}")
+            print(f"Error getting details for activity {activity.get('activityId')}: {str(e)}")
             continue
+    
+    # Return empty DataFrame if no data
+    if not data:
+        return pd.DataFrame(columns=['date', 'trimp', 'activity_type', 'activity_name'])
     
     return pd.DataFrame(data)
 
@@ -74,6 +90,10 @@ def main():
     try:
         # Get data
         df = get_garmin_data()
+        
+        if len(df) == 0:
+            print("No activities found!")
+            return
         
         # Sort by date
         df = df.sort_values('date')
